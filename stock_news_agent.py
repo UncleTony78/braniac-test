@@ -1,10 +1,11 @@
 import os
 import time
 import json
-import schedule
 import requests
 import google.generativeai as genai
 from dotenv import load_dotenv
+from textblob import TextBlob
+import streamlit as st
 
 # Load environment variables
 load_dotenv()
@@ -44,84 +45,74 @@ def fetch_fmp_news():
         print(f"Error fetching FMP news: {e}")
         return None
 
-def fetch_market_sentiment():
-    """Fetch market sentiment from Finnhub"""
-    url = f"https://finnhub.io/api/v1/news-sentiment?token={FINHUB_KEY}"
-    try:
-        response = requests.get(url)
-        return response.json()
-    except Exception as e:
-        print(f"Error fetching Finnhub sentiment: {e}")
-        return None
-
-def analyze_news_with_gemini(news_data):
+def analyze_news_with_gemini(alpha_news, fmp_news):
     """Use Gemini to analyze and summarize stock news"""
-    if not news_data:
-        return "Unable to fetch news data."
-    
-    prompt = f"""
-    Analyze the following financial market data and provide:
-    1. Key Market Summary:
-       - Major market movements
-       - Notable stock performances
-       - Important sector trends
-    
-    2. News Analysis:
-       - Most significant market-moving news
-       - Potential market catalysts
-       - Key company developments
-    
-    3. Market Sentiment and Outlook:
-       - Overall market sentiment
-       - Short-term market outlook
-       - Potential risks and opportunities
+    combined_articles = []
 
-    Please provide concise, actionable insights.
-    
-    News data: {json.dumps(news_data, indent=2)}
-    """
-    
-    try:
-        response = model.generate_content(prompt)
-        return response.text
-    except Exception as e:
-        return f"Error analyzing news with Gemini: {e}"
+    if alpha_news and isinstance(alpha_news, dict):
+        for article in alpha_news.get("feed", []):
+            if isinstance(article, dict):
+                title = article.get("title", "No Title")
+                summary = article.get("summary", "No summary available")
+                combined_articles.append(f"Alpha Vantage: {title} - {summary}")
 
-def run_news_update():
-    """Main function to run the news update"""
-    print("\n=== Running Stock News Update ===")
-    print(f"Time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-    
-    # Fetch data from multiple sources
-    print("Fetching news and market data...")
-    news_data = {
-        "alpha_vantage": fetch_alpha_vantage_news(),
-        "fmp_news": fetch_fmp_news(),
-        "market_sentiment": fetch_market_sentiment()
+    if fmp_news and isinstance(fmp_news, list):
+        for article in fmp_news:
+            if isinstance(article, dict):
+                title = article.get("title", "No Title")
+                summary = article.get("summary", "No summary available")
+                combined_articles.append(f"FMP: {title} - {summary}")
+
+    # Initialize results
+    results = {
+        "sentiment_analysis": [],
+        "summaries": []
     }
-    
-    print("Analyzing with Gemini...")
-    analysis = analyze_news_with_gemini(news_data)
-    
-    print("\nGemini Market Analysis:")
-    print("=" * 50)
-    print(analysis)
-    print("=" * 50)
+
+    # Stage 1: Sentiment Analysis
+    for article in combined_articles:
+        time.sleep(1)  # Simulate processing time
+        analysis = TextBlob(article)
+        sentiment = analysis.sentiment.polarity
+        results["sentiment_analysis"].append({
+            "article": article,
+            "sentiment": sentiment
+        })
+
+    # Stage 2: Summarization
+    for article in combined_articles:
+        time.sleep(1)  # Simulate processing time
+        summary = article[:50] + "..."  # Placeholder for actual summarization
+        results["summaries"].append({
+            "article": article,
+            "summary": summary
+        })
+
+    return results
 
 def main():
-    print("Advanced Stock News Agent Started!")
-    print("Schedule: Running daily updates at 9:00 AM")
+    st.title("Stock News Agent")
     
-    # Schedule the job to run daily at 9:00 AM
-    schedule.every().day.at("09:00").do(run_news_update)
+    st.header("Fetching News...")
+    alpha_news = fetch_alpha_vantage_news()
+    fmp_news = fetch_fmp_news()
+
+    st.header("Analyzing News...")
+    analysis = analyze_news_with_gemini(alpha_news, fmp_news)
+
+    # Display AI Analysis
+    st.header("AI Analysis and Suggestions")
     
-    # Run once immediately on startup
-    run_news_update()
-    
-    # Keep the script running
-    while True:
-        schedule.run_pending()
-        time.sleep(60)
+    st.subheader("Sentiment Analysis:")
+    for item in analysis["sentiment_analysis"]:
+        st.write(f"{item['article']} - Sentiment: {item['sentiment']}")
+
+    st.subheader("Summaries:")
+    for item in analysis["summaries"]:
+        st.write(f"{item['article']} - Summary: {item['summary']}")
+
+    st.subheader("DYOR (Do Your Own Research)")
+    st.write("Always verify the information and conduct your own analysis before making investment decisions.")
 
 if __name__ == "__main__":
-    main() 
+    main()
