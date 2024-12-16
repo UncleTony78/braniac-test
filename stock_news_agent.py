@@ -11,9 +11,9 @@ import streamlit as st
 load_dotenv()
 
 # API Keys
-ALPHA_VANTAGE_KEY = "K89OKLH1HTR1ISG6"
-FINHUB_KEY = "ctbh9o9r01qvslquhp6gctbh9o9r01qvslquhp70"
-FMP_KEY = "78vbq4FqQlTjaAidauLyvOa0TeLoOTi9"
+ALPHA_VANTAGE_KEY = os.getenv("ALPHA_VANTAGE_KEY")
+FINHUB_KEY = os.getenv("FINHUB_KEY")
+FMP_KEY = os.getenv("FMP_KEY")
 
 # Configure Gemini AI
 genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
@@ -63,56 +63,62 @@ def analyze_news_with_gemini(alpha_news, fmp_news):
                 summary = article.get("summary", "No summary available")
                 combined_articles.append(f"FMP: {title} - {summary}")
 
-    # Initialize results
-    results = {
-        "sentiment_analysis": [],
-        "summaries": []
-    }
+    # Prepare prompt for AI analysis
+    prompt = f"Analyze the all of these and provide financial insights, ensure that the analysis is accurate and the data is fact checked. Ensure that you do a deep dive into the data and provide a detailed analysis:\n\n" + "\n".join(combined_articles)
 
-    # Stage 1: Sentiment Analysis
-    for article in combined_articles:
-        time.sleep(1)  # Simulate processing time
-        analysis = TextBlob(article)
-        sentiment = analysis.sentiment.polarity
-        results["sentiment_analysis"].append({
-            "article": article,
-            "sentiment": sentiment
-        })
-
-    # Stage 2: Summarization
-    for article in combined_articles:
-        time.sleep(1)  # Simulate processing time
-        summary = article[:50] + "..."  # Placeholder for actual summarization
-        results["summaries"].append({
-            "article": article,
-            "summary": summary
-        })
-
-    return results
+    try:
+        response = model.generate_content(prompt)
+        analysis_result = response.text
+        return analysis_result
+    except Exception as e:
+        return f"Error analyzing news with Gemini: {e}"
 
 def main():
     st.title("Stock News Agent")
     
-    st.header("Fetching News...")
-    alpha_news = fetch_alpha_vantage_news()
-    fmp_news = fetch_fmp_news()
+    # Create tabs for analysis and chat
+    tab1, tab2 = st.tabs(["Analysis", "Chat"])
 
-    st.header("Analyzing News...")
-    analysis = analyze_news_with_gemini(alpha_news, fmp_news)
+    with tab1:
+        st.header("Fetching News...")
+        alpha_news = fetch_alpha_vantage_news()
+        fmp_news = fetch_fmp_news()
 
-    # Display AI Analysis
-    st.header("AI Analysis and Suggestions")
-    
-    st.subheader("Sentiment Analysis:")
-    for item in analysis["sentiment_analysis"]:
-        st.write(f"{item['article']} - Sentiment: {item['sentiment']}")
+        st.header("Analyzing News...")
+        analysis = analyze_news_with_gemini(alpha_news, fmp_news)
 
-    st.subheader("Summaries:")
-    for item in analysis["summaries"]:
-        st.write(f"{item['article']} - Summary: {item['summary']}")
+        # Display AI Analysis
+        st.header("AI Analysis and Suggestions")
+        st.write(analysis)
 
-    st.subheader("DYOR (Do Your Own Research)")
-    st.write("Always verify the information and conduct your own analysis before making investment decisions.")
+    with tab2:
+        st.subheader("Chat with AI")
+        if 'messages' not in st.session_state:
+            st.session_state.messages = []
+
+        user_input = st.text_input("You: ", "")
+        
+        if st.button("Send"):
+            if user_input:
+                st.session_state.messages.append({"role": "user", "content": user_input})
+                
+                # Prepare the context for AI response
+                context = "\n".join([f"{msg['role']}: {msg['content']}" for msg in st.session_state.messages])
+                prompt = f"Based on the previous analysis and the following conversation, respond to the user:\n\n{context}"
+
+                # Get AI response
+                response = model.generate_content(prompt)
+                ai_response = response.text
+                
+                # Add AI response to messages
+                st.session_state.messages.append({"role": "assistant", "content": ai_response})
+
+        # Display chat messages
+        for message in st.session_state.messages:
+            if message["role"] == "user":
+                st.write(f"You: {message['content']}")
+            else:
+                st.write(f"AI: {message['content']}")
 
 if __name__ == "__main__":
     main()
